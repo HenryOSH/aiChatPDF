@@ -13,6 +13,10 @@ import streamlit as st
 import tempfile
 import os
 from streamlit_extras.buy_me_a_coffee import button
+from langchain.schema import (
+    HumanMessage,
+)
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 button(username="HenryOSH", floating=True, width=221)
 
@@ -58,15 +62,26 @@ if uploaded_file is not None:
 
     # load it into Chroma
     db = Chroma.from_documents(texts, embeddings_model)
-
+    
+    #stream 받아줄 handler 만들기
+    from langchain.callbacks.base import BaseCallbackHandler
+    class StreamHandler(BaseCallbackHandler):
+        def __init__(self, container, initial_text=""):
+            self.container = container
+            self.text=initial_text
+        def on_llm_new_token(self, token: str, **kwargs) -> None:
+            self.text+=token
+            self.container.markdown(self.text)
+            
     #질문 받기
     st.header("PDF 관련하여 질문 해주세요!")
     question = st.text_input('질문을 입력해주세요: ')
 
     if st.button('질문하기'):
         with st.spinner('답변 중... 잠시만 기다려주세요!'):
-            llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
+            chat_box = st.empty()
+            stream_handler = StreamHandler(chat_box)
+            llm = ChatOpenAI(model_name="gpt-3.5-turbo", streaming=True, callbacks=[stream_handler],temperature=0)
             qa_chain = RetrievalQA.from_chain_type(llm,retriever=db.as_retriever())
-            result=qa_chain({"query": question})
-            st.write(result["result"])
+            qa_chain({"query": question})
 
